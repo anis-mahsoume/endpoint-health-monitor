@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/anis-mahsoume/endpoint-health-monitor/internal/checker"
 )
@@ -19,6 +20,10 @@ var (
 type EndpointState struct {
 	Endpoint checker.Endpoint
 	History  []checker.Result // oldest first, at most historySize entries
+
+	ConsecutiveFailures int
+	FailingSince        *time.Time
+	Down                bool
 }
 
 // Latest returns the most recent result, and false if there's none yet.
@@ -31,16 +36,18 @@ func (s EndpointState) Latest() (checker.Result, bool) {
 
 // Store holds endpoint states in memory. It's safe for concurrent use.
 type Store struct {
-	mu          sync.RWMutex
-	states      map[string]*EndpointState
-	historySize int
+	mu               sync.RWMutex
+	states           map[string]*EndpointState
+	historySize      int
+	failureThreshold int
 }
 
 // New returns an empty Store that keeps up to historySize results per endpoint.
-func New(historySize int) *Store {
+func New(historySize int, failureThreshold int) *Store {
 	return &Store{
-		states:      make(map[string]*EndpointState),
-		historySize: historySize,
+		states:           make(map[string]*EndpointState),
+		historySize:      historySize,
+		failureThreshold: failureThreshold,
 	}
 }
 
@@ -94,6 +101,7 @@ func (s *Store) Record(r checker.Result) {
 	if len(st.History) > s.historySize {
 		st.History = st.History[1:]
 	}
+	st.applyResult(r, s.failureThreshold)
 }
 
 // Snapshot returns a copy of every endpoint's state, sorted by ID.
@@ -104,13 +112,42 @@ func (s *Store) Snapshot() []EndpointState {
 
 	out := make([]EndpointState, 0, len(s.states))
 	for _, st := range s.states {
-		out = append(out, EndpointState{
-			Endpoint: st.Endpoint,
-			History:  slices.Clone(st.History),
-		})
+		out = append(out, st.clone())
 	}
 	slices.SortFunc(out, func(a, b EndpointState) int {
 		return strings.Compare(a.Endpoint.ID, b.Endpoint.ID)
 	})
 	return out
+}
+
+func (s *Store) Get(id string) (EndpointState, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	st, ok := s.states[id]
+	if !ok {
+		return EndpointState{}, ErrNotFound
+	}
+	return st.clone(), nil
+}
+
+func (st *EndpointState) applyResult(r checker.Result, threshold int) {
+	if r.Outcome == checker.OutcomeUp {
+		st.ConsecutiveFailures = 0
+		st.FailingSince = nil
+		st.Down = false
+		return
+	}
+	if st.ConsecutiveFailures == 0 {
+		t := r.CheckedAt
+		st.FailingSince = &t
+	}
+	st.ConsecutiveFailures++
+	st.Down = st.ConsecutiveFailures >= threshold
+}
+
+func (st *EndpointState) clone() EndpointState {
+	cp := *st
+	cp.History = slices.Clone(st.History)
+	return cp
 }
