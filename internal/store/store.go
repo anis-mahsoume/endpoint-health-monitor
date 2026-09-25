@@ -1,3 +1,4 @@
+// Package store keeps the monitored endpoints, their recent results and their status in memory.
 package store
 
 import (
@@ -10,7 +11,7 @@ import (
 	"github.com/anis-mahsoume/endpoint-health-monitor/internal/checker"
 )
 
-// Errors returned by Add and Remove.
+// Errors returned by Add, Remove and Get.
 var (
 	ErrExists   = errors.New("endpoint already exists")
 	ErrNotFound = errors.New("endpoint not found")
@@ -21,9 +22,9 @@ type EndpointState struct {
 	Endpoint checker.Endpoint
 	History  []checker.Result // oldest first, at most historySize entries
 
-	ConsecutiveFailures int
-	FailingSince        *time.Time
-	Down                bool
+	ConsecutiveFailures int        // failed checks in a row; reset by a successful check
+	FailingSince        *time.Time // when the current failure streak started; nil while up
+	Down                bool       // true once ConsecutiveFailures reaches the failure threshold
 }
 
 // Latest returns the most recent result, and false if there's none yet.
@@ -34,6 +35,20 @@ func (s EndpointState) Latest() (checker.Result, bool) {
 	return s.History[len(s.History)-1], true
 }
 
+// Status summarizes the state as "pending", "down", "failing" or "up".
+func (s EndpointState) Status() string {
+	switch {
+	case len(s.History) == 0:
+		return "pending"
+	case s.Down:
+		return "down"
+	case s.ConsecutiveFailures > 0:
+		return "failing"
+	default:
+		return "up"
+	}
+}
+
 // Store holds endpoint states in memory. It's safe for concurrent use.
 type Store struct {
 	mu               sync.RWMutex
@@ -42,7 +57,8 @@ type Store struct {
 	failureThreshold int
 }
 
-// New returns an empty Store that keeps up to historySize results per endpoint.
+// New returns an empty Store that keeps up to historySize results per endpoint
+// and marks an endpoint down after failureThreshold consecutive failures.
 func New(historySize int, failureThreshold int) *Store {
 	return &Store{
 		states:           make(map[string]*EndpointState),
@@ -120,6 +136,7 @@ func (s *Store) Snapshot() []EndpointState {
 	return out
 }
 
+// Get returns a copy of one endpoint's state, or ErrNotFound.
 func (s *Store) Get(id string) (EndpointState, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

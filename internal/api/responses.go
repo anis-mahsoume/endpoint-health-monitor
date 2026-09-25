@@ -40,23 +40,14 @@ func toStatusResponse(s store.EndpointState) statusResponse {
 	resp := statusResponse{
 		ID:                  s.Endpoint.ID,
 		URL:                 s.Endpoint.URL,
+		Status:              s.Status(),
 		ConsecutiveFailures: s.ConsecutiveFailures,
 	}
-
-	latest, ok := s.Latest()
-	switch {
-	case !ok:
-		resp.Status = "pending"
-	case s.Down:
-		resp.Status = "down"
+	if s.Down {
 		resp.DownSince = s.FailingSince
-	case s.ConsecutiveFailures > 0:
-		resp.Status = "failing"
-	default:
-		resp.Status = "up"
 	}
 
-	if ok {
+	if latest, ok := s.Latest(); ok {
 		lc := toCheckResponse(latest)
 		resp.LastCheck = &lc
 	}

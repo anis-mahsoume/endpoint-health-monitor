@@ -74,3 +74,24 @@ func TestFailingSinceClearedOnRecovery(t *testing.T) {
 		t.Errorf("FailingSince = %v, want nil after recovery", *got.FailingSince)
 	}
 }
+
+func TestStatus(t *testing.T) {
+	tests := []struct {
+		name     string
+		outcomes []checker.Outcome
+		want     string
+	}{
+		{"no checks yet", nil, "pending"},
+		{"last check up", []checker.Outcome{fail, up}, "up"},
+		{"failing below threshold", []checker.Outcome{up, fail}, "failing"},
+		{"down at threshold", []checker.Outcome{fail, fail, fail}, "down"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := record(t, tt.outcomes...).Status(); got != tt.want {
+				t.Errorf("Status() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

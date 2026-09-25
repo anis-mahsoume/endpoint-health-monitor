@@ -1,3 +1,4 @@
+// Package checker performs HTTP health checks, one at a time or in concurrent rounds.
 package checker
 
 import (
@@ -8,16 +9,18 @@ import (
 	"time"
 )
 
+// Endpoint is a URL to monitor, identified by a unique ID.
 type Endpoint struct {
 	ID  string
 	URL string
 }
 
+// Outcome classifies the result of a single check.
 type Outcome string
 
 const (
-	OutcomeUp        Outcome = "up"
-	OutcomeTimeout   Outcome = "timeout"
+	OutcomeUp        Outcome = "up"         // status code 2xx or 3xx
+	OutcomeTimeout   Outcome = "timeout"    // no response before the check timed out
 	OutcomeError     Outcome = "error"      // DNS failure, connection refused, TLS problem...
 	OutcomeBadStatus Outcome = "bad_status" // status code outside 2xx/3xx
 )
@@ -29,7 +32,7 @@ type Result struct {
 	Outcome    Outcome
 	StatusCode int
 	Latency    time.Duration
-	CertExpiry *time.Time // nil when there's no TLS (plain http) or the check failed
+	CertExpiry *time.Time // nil for plain http, or when no response was received
 	Err        string
 }
 

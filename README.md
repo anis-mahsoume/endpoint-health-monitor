@@ -1,10 +1,12 @@
 # endpoint-health-monitor
 
-A lightweight Go service that monitors HTTP(S) endpoints and reports their status, response time and TLS certificate expiry.
+[![CI](https://github.com/anis-mahsoume/endpoint-health-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/anis-mahsoume/endpoint-health-monitor/actions/workflows/ci.yml)
 
-> **Status: work in progress.** Checking, scheduling, down detection and the REST API work; the web dashboard is next (see [Roadmap](#roadmap)).
+A lightweight Go service that monitors HTTP(S) endpoints and reports their status, response time and TLS certificate expiry, through a REST API and a small web dashboard.
 
-## Features (so far)
+![Dashboard showing six endpoints: two up, one failing and three down](docs/dashboard.png)
+
+## Features
 
 - Checks endpoints concurrently with a configurable number of workers
 - Runs a check round on a fixed interval until the process is stopped
@@ -16,6 +18,7 @@ A lightweight Go service that monitors HTTP(S) endpoints and reports their statu
 - Marks an endpoint `down` after 3 consecutive failures, and records when the failure streak started
 - REST API to list statuses, read history, and add or remove endpoints
 - Optional API key protection for the write routes
+- Web dashboard with a status icon per endpoint; hover it for the down time and last error. Refreshes every 5 seconds
 - Graceful shutdown on Ctrl+C
 
 ## Quick start
@@ -28,11 +31,13 @@ cd endpoint-health-monitor
 go run ./cmd/monitor
 ```
 
-The service checks a few built-in endpoints (hardcoded in `cmd/monitor/main.go`) right away, then once per interval, and serves the API on `:8080`:
+The service checks a few built-in endpoints (hardcoded in `cmd/monitor/main.go`) right away, then once per interval. Open the dashboard at http://localhost:8080, or query the API:
 
 ```bash
 curl http://localhost:8080/api/v1/status
 ```
+
+The dashboard is styled with [Pico CSS](https://picocss.com), loaded from a CDN. Without internet access the page still works, just unstyled.
 
 ### Flags
 
@@ -41,7 +46,7 @@ curl http://localhost:8080/api/v1/status
 | `-addr`     | `:8080` | HTTP listen address         |
 | `-workers`  | `10`    | number of concurrent checks |
 | `-timeout`  | `5s`    | per-check timeout           |
-| `-interval` | `30s`   | time between check rounds   |
+| `-interval` | `10s`   | time between check rounds   |
 
 ### Environment variables
 
@@ -75,7 +80,7 @@ Example `/status` response (trimmed):
 {
   "endpoints": [
     {
-      "id": "broken",
+      "id": "Broken",
       "url": "https://nothing.invalid",
       "status": "down",
       "consecutive_failures": 3,
@@ -91,13 +96,48 @@ Example `/status` response (trimmed):
 }
 ```
 
-Adding an endpoint:
+### Examples
+
+Start the service with an API key, e.g. `API_KEY=secret go run ./cmd/monitor` (bash) or `$env:API_KEY = "secret"; go run ./cmd/monitor` (PowerShell), and set the same variable in the shell you send requests from.
+
+**bash / curl**
 
 ```bash
+# List every endpoint's status
+curl http://localhost:8080/api/v1/status
+
+# Recent results for one endpoint
+curl http://localhost:8080/api/v1/endpoints/Github/history
+
+# Add an endpoint
 curl -X POST http://localhost:8080/api/v1/endpoints \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $API_KEY" \
   -d '{"id": "example", "url": "https://example.com"}'
+
+# Remove it
+curl -X DELETE http://localhost:8080/api/v1/endpoints/example \
+  -H "X-API-Key: $API_KEY"
+```
+
+**PowerShell**
+
+```powershell
+# List every endpoint's status
+Invoke-RestMethod http://localhost:8080/api/v1/status | ConvertTo-Json -Depth 5
+
+# Recent results for one endpoint
+Invoke-RestMethod http://localhost:8080/api/v1/endpoints/Github/history | ConvertTo-Json -Depth 5
+
+# Add an endpoint
+Invoke-RestMethod -Method Post http://localhost:8080/api/v1/endpoints `
+  -Headers @{ "X-API-Key" = $env:API_KEY } `
+  -ContentType "application/json" `
+  -Body '{"id": "example", "url": "https://example.com"}'
+
+# Remove it
+Invoke-RestMethod -Method Delete http://localhost:8080/api/v1/endpoints/example `
+  -Headers @{ "X-API-Key" = $env:API_KEY }
 ```
 
 ## Testing
@@ -109,13 +149,11 @@ go test ./...
 ## Project structure
 
 ```
-cmd/monitor/         entry point: flags, scheduler and HTTP server wiring
-internal/api/        Gin router, handlers, middleware and response types
+cmd/monitor/         entry point: flags, seed endpoints, scheduler, graceful shutdown
+internal/server/     builds the HTTP handler: global middleware, mounts the API and dashboard
+internal/api/        JSON API under /api/v1: handlers, API key middleware, response types
+internal/dashboard/  HTML dashboard at /: page data and the embedded template
 internal/checker/    single-endpoint checks and the concurrent worker pool
 internal/scheduler/  runs a check round on a fixed interval
-internal/store/      in-memory endpoint list, result history and down detection
+internal/store/      in-memory endpoint list, result history, down detection and status rule
 ```
-
-## Roadmap
-
-- Web dashboard
