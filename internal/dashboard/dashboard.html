@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="5">
+  <title>Endpoint Health Monitor</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.classless.min.css">
+  <style>
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 50%;
+      font-size: 1.1rem;
+      font-weight: 700;
+      line-height: 1;
+      color: #fff;
+      background: #6b7280;
+      cursor: pointer;
+    }
+    .chip.up      { background: #16a34a; }
+    .chip.failing { background: #d97706; }
+    .chip.down    { background: #dc2626; }
+    .cert-soon    { color: #d97706; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Endpoint Health Monitor</h1>
+    <p>Watching {{len .Endpoints}} endpoints. Updated at {{.GeneratedAt.Format "15:04:05"}}.</p>
+    <table>
+      <thead>
+        <tr><th>Endpoint</th><th>URL</th><th>Status</th><th>Last checked</th><th>Latency</th><th>Certificate</th></tr>
+      </thead>
+      <tbody>
+        {{range .Endpoints}}
+          <tr>
+            <td>{{.ID}}</td>
+            <td><a href="{{.URL}}" target="_blank" rel="noopener">{{.URL}}</a></td>
+            <td><span class="chip {{.Status}}" title="{{.Tooltip}}" aria-label="{{.Tooltip}}">
+              {{- if eq .Status "up"}}&#10004;&#xFE0E;
+              {{- else if eq .Status "down"}}&#10006;&#xFE0E;
+              {{- else if eq .Status "failing"}}&#9888;&#xFE0E;
+              {{- else if eq .Status "pending"}}?
+              {{- else}}{{.Status}}{{end -}}
+            </span></td>
+            <td>{{or .LastChecked "—"}}</td>
+            <td>{{or .Latency "—"}}</td>
+            <td{{if .CertSoon}} class="cert-soon"{{end}}>{{or .CertExpiry "—"}}</td>
+          </tr>
+        {{else}}
+          <tr>
+            <td colspan="6">No endpoints yet. Add one with <code>POST /api/v1/endpoints</code>.</td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>
